@@ -1,0 +1,211 @@
+package ch.epfl.cs107.icmaze;
+
+import ch.epfl.cs107.icmaze.actor.ICMazePlayer;
+import ch.epfl.cs107.icmaze.actor.ui.CoinCounterHUD;
+import ch.epfl.cs107.icmaze.actor.ui.PauseMenu;
+import ch.epfl.cs107.icmaze.area.ICMazeArea;
+import ch.epfl.cs107.icmaze.area.maps.*;
+import ch.epfl.cs107.play.areagame.AreaGame;
+import ch.epfl.cs107.play.io.FileSystem;
+import ch.epfl.cs107.play.math.DiscreteCoordinates;
+import ch.epfl.cs107.play.math.Orientation;
+import ch.epfl.cs107.play.signal.logic.Logic;
+import ch.epfl.cs107.play.window.Window;
+import ch.epfl.cs107.play.window.Keyboard;
+
+import ch.epfl.cs107.icmaze.handler.DialogHandler;
+import ch.epfl.cs107.play.engine.actor.Dialog;
+import ch.epfl.cs107.play.window.Canvas;
+
+public class ICMaze extends AreaGame implements DialogHandler {
+
+    private static final String INITIAL_AREA = "icmaze/Spawn";
+    private ICMazePlayer player;
+    private final CoinCounterHUD coinHUD = new CoinCounterHUD();
+    private Dialog activeDialog;
+    private int monsterKillCount = 0;
+
+    private Window window;
+    private FileSystem fileSystem;
+
+    @Override
+    public boolean begin(Window window, FileSystem fileSystem) {
+
+        this.window = window;
+        this.fileSystem = fileSystem;
+        this.monsterKillCount = 0;
+
+        if (!super.begin(window, fileSystem)) {
+            return false;
+        }
+
+        createAreas();
+        initArea(INITIAL_AREA);
+
+        return true;
+    }
+
+    private void createAreas() {
+
+        ICMazeArea[] areas = LevelGenerator.generateLine(this, 3);
+
+        if (areas.length > 0) {
+            // Le dernier est BossArea qui est le signal logique
+            ch.epfl.cs107.play.signal.logic.Logic bossSignal = (Logic) areas[areas.length
+                    - 1];
+
+            for (ICMazeArea area : areas) {
+                area.setValidationSignal(bossSignal);
+                addArea(area);
+            }
+        }
+    }
+
+    // ...
+
+    private boolean isPaused = false;
+    private final ch.epfl.cs107.icmaze.actor.ui.PauseMenu pauseMenu = new PauseMenu();
+
+    @Override
+    public void update(float deltaTime) {
+
+        // RESET GAME (Always active)
+        // on vérifie ici la touche reset
+        Keyboard keyboard = getCurrentArea().getKeyboard();
+        if (keyboard.get(KeyBindings.RESET_GAME).isPressed()) {
+            resetGame();
+            return;
+        }
+
+        // PAUSE TOGGLE
+        if (keyboard.get(KeyBindings.PAUSE_GAME).isPressed()) {
+            isPaused = !isPaused;
+        }
+
+        // IF PAUSED: Freeze game loop
+        if (isPaused) {
+            return;
+        }
+
+        // Check active dialog
+        if (activeDialog != null) {
+
+            // Should be drawn
+            // Check if completion occurred (empty dialog or finished)
+            if (activeDialog.isCompleted()) {
+                activeDialog = null;
+                return;
+            }
+
+            // Only update active dialog if next key is pressed
+            if (keyboard.get(KeyBindings.NEXT_DIALOG).isPressed()) {
+                activeDialog.update(deltaTime);
+                if (activeDialog.isCompleted()) {
+                    activeDialog = null;
+                }
+            }
+            return; // Pause game update
+        }
+
+        super.update(deltaTime);
+
+        if (player.getisChanging()) {
+            changeArea(player.getDestinationArea(), player.getDestinationCoordonates());
+        }
+    }
+
+    @Override
+    public void draw() {
+        super.draw();
+        if (player != null) {
+            coinHUD.setCoinCount(player.getCoinCount());
+            coinHUD.draw(getWindow());
+        }
+        if (activeDialog != null) {
+            activeDialog.draw(getWindow());
+        }
+        if (isPaused) {
+            pauseMenu.draw(getWindow());
+        }
+    }
+
+    @Override
+    public void publish(Dialog dialog) {
+        this.activeDialog = dialog;
+    }
+
+    /**
+     * Resets the entire game state to the initial parameters
+     * Reloads the file system and restarts from the first area
+     */
+    public void resetGame() {
+
+        if (player != null) {
+            player.leaveArea();
+        }
+        activeDialog = null;
+        isPaused = false;
+
+        begin(window, fileSystem);
+    }
+
+    /**
+     * Resets the current area logic and player position
+     * Useful when the player dies or requests a restart of the level
+     */
+    public void resetCurrentArea() {
+        String currentAreaKey = getCurrentArea().getTitle();
+        player.leaveArea();
+
+        ICMazeArea area = (ICMazeArea) setCurrentArea(currentAreaKey, true);
+        area.setGame(this); // on recharge l'aire courante
+
+        // on recrée le joueur
+        DiscreteCoordinates spawnPosition = area.getplayerSpawnPosition();
+        player.resetAfterAreaReset();
+        player.enterArea(area, spawnPosition);
+        area.setViewCandidate(player);
+    }
+
+    private void changeArea(String destination, DiscreteCoordinates coordinates) {
+
+        player.leaveArea();
+        ICMazeArea newArea = (ICMazeArea) setCurrentArea(destination, false);
+        newArea.setGame(this);
+        player.enterArea(newArea, coordinates);
+        newArea.setViewCandidate(player);
+        player.setisChanging(false);
+    }
+
+    @Override
+    public String getTitle() {
+        return "ICMaze";
+    }
+
+    private void initArea(String areaKey) {
+        ICMazeArea area = (ICMazeArea) setCurrentArea(areaKey, false);
+        area.setGame(this);
+
+        DiscreteCoordinates spawnPosition = area.getplayerSpawnPosition();
+        player = new ICMazePlayer(area, Orientation.DOWN, spawnPosition, "icmaze/player");
+        player.enterArea(area, spawnPosition);
+        area.setViewCandidate(player);
+
+    }
+
+    /**
+     * Increments the total count of monsters killed by the player
+     */
+    public void incrementMonsterKillCount() {
+        monsterKillCount++;
+    }
+
+    /**
+     * Gets the current number of monsters killed
+     * 
+     * @return (int): the kill count
+     */
+    public int getMonsterKillCount() {
+        return monsterKillCount;
+    }
+}

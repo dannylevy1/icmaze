@@ -1,0 +1,185 @@
+package ch.epfl.cs107.icmaze.actor;
+
+import ch.epfl.cs107.icmaze.handler.ICMazeInteractionVisitor;
+import ch.epfl.cs107.play.areagame.actor.Interactable;
+import ch.epfl.cs107.play.areagame.area.Area;
+import ch.epfl.cs107.play.areagame.handler.AreaInteractionVisitor;
+import ch.epfl.cs107.play.engine.actor.Sprite;
+import ch.epfl.cs107.play.math.DiscreteCoordinates;
+import ch.epfl.cs107.play.math.Orientation;
+import ch.epfl.cs107.play.math.Vector;
+import ch.epfl.cs107.play.window.Canvas;
+
+import java.util.List;
+
+/**
+ * Portal
+ * Represents a portal between areas. Can be Open, Locked, or Invisible.
+ */
+public class Portal extends ICMazeActor implements Interactable {
+
+    private State state;
+    private String destinationAreaName;
+    private DiscreteCoordinates arrivalCoordinates;
+    public static final int NO_KEY_ID = Integer.MIN_VALUE;
+    private int keyId;
+    private final Sprite invisibleSprite;
+    private final Sprite lockedSprite;
+
+    public enum State {
+        OPEN,
+        LOCKED,
+        INVISIBLE
+    }
+
+    /**
+     * Portal constructor
+     * 
+     * @param area                (Area): Owner area
+     * @param orientation         (Orientation): Orientation
+     * @param position            (DiscreteCoordinates): Position
+     * @param destinationAreaName (String): Name of destination area
+     * @param keyId               (int): ID of the key required if locked
+     * @param state               (State): Initial state
+     */
+    public Portal(Area area, Orientation orientation, DiscreteCoordinates position, String destinationAreaName,
+            int keyId, State state) {
+
+        super(area, orientation, position);
+
+        this.state = state;
+        this.destinationAreaName = destinationAreaName;
+        this.keyId = keyId;
+
+        this.invisibleSprite = new Sprite(
+                "icmaze/invisibleDoor_" + orientation.ordinal(),
+                (orientation.ordinal() + 1) % 2 + 1,
+                orientation.ordinal() % 2 + 1,
+                this);
+        this.invisibleSprite.setDepth(-1);
+
+        this.lockedSprite = new Sprite(
+                "icmaze/chained_wood_" + orientation.ordinal(),
+                (orientation.ordinal() + 1) % 2 + 1,
+                orientation.ordinal() % 2 + 1,
+                this);
+        this.lockedSprite.setDepth(-1);
+    }
+
+    /**
+     * Sets the arrival coordinates for the entity using this portal
+     * 
+     * @param arrivalCoordinates (DiscreteCoordinates): the target coordinates
+     */
+    public void setArrivalCoordinates(DiscreteCoordinates arrivalCoordinates) {
+        this.arrivalCoordinates = arrivalCoordinates;
+    }
+
+    @Override
+    public void draw(Canvas canvas) {
+        super.draw(canvas);
+        switch (state) {
+            case INVISIBLE:
+                invisibleSprite.draw(canvas);
+                break;
+            case LOCKED:
+                lockedSprite.draw(canvas);
+                break;
+            case OPEN:
+                break;
+            default:
+                break;
+        }
+    }
+
+    @Override
+    public boolean takeCellSpace() {
+        return state != State.OPEN;
+    }
+
+    @Override
+    public boolean isViewInteractable() {
+        return true;
+    }
+
+    @Override
+    public boolean isCellInteractable() {
+        return state == State.OPEN;
+    }
+
+    @Override
+    public List<DiscreteCoordinates> getCurrentCells() {
+        DiscreteCoordinates coord = getCurrentMainCellCoordinates();
+        return List.of(coord, coord.jump(new Vector((getOrientation().ordinal() + 1) % 2,
+                getOrientation().ordinal() % 2)));
+    }
+
+    /**
+     * Gets the current state of the portal (OPEN, LOCKED, INVISIBLE)
+     * 
+     * @return (State): the portal state
+     */
+    public State getState() {
+        return state;
+    }
+
+    /**
+     * Sets the state of the portal
+     * 
+     * @param state (State): the new state
+     */
+    public void setState(State state) {
+        this.state = state;
+    }
+
+    /**
+     * Gets the ID of the key required to open this portal
+     * 
+     * @return (int): the key ID, or NO_KEY_ID if none
+     */
+    public int getKeyId() {
+        return keyId;
+    }
+
+    /**
+     * Open the portal if it is locked
+     */
+    public void open() {
+        if (state == State.LOCKED) {
+            state = State.OPEN;
+        }
+    }
+
+    public String getDestinationAreaName() {
+        return destinationAreaName;
+    }
+
+    public DiscreteCoordinates getArrivalCoordinates() {
+        return arrivalCoordinates;
+    }
+
+    /**
+     * Sets the name of the destination area
+     * 
+     * @param destinationAreaName (String): the resource name of the area
+     */
+    public void setDestinationArea(String destinationAreaName) {
+        this.destinationAreaName = destinationAreaName;
+    }
+
+    /**
+     * Sets the key ID required to unlock this portal
+     * 
+     * @param keyId (int): the unique key identifier
+     */
+    public void setKeyId(int keyId) {
+        this.keyId = keyId;
+    }
+
+    @Override
+    public void acceptInteraction(AreaInteractionVisitor v, boolean isCellInteraction) {
+        if (v instanceof ICMazeInteractionVisitor visitor) {
+            visitor.interactWith(this, isCellInteraction);
+        }
+    }
+}
